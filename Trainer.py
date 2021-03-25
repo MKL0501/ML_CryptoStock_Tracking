@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 ticker_symbols = ['TSLA','GOOG','AMZN','AAPL']
 
 #number of days
-window_size = 5
+window_size = 365
 
 #split ratio points of dataset
 train_stop = 0.7
@@ -42,7 +42,7 @@ for symbol in ticker_symbols:
     ticker_data = yf.Ticker(symbol)
     
     #get the historical prices for each ticker
-    df_dict[symbol] = ticker_data.history(period='1d', start='2010-1-1', end='2020-1-1')
+    df_dict[symbol] = ticker_data.history(period='1d', start='2010-1-1', end='2021-1-1')
 
 #make dataframe
 data = pd.concat(df_dict, axis = 1)
@@ -111,23 +111,24 @@ num_features = scaled_data.shape[1]
 # In[Create Model]
 
 model = Sequential([
-                    LSTM(units = 120, activation = 'tanh', return_sequences = True, input_shape = (x_train.shape[1], x_train.shape[2])),
-                    Dropout(0.2),
+                    LSTM(units = 512, activation = 'tanh', return_sequences = True, input_shape = (x_train.shape[1], x_train.shape[2])),
+                    #Dropout(0.2),
                           
-                    LSTM(units = 120, activation = 'tanh', return_sequences = True),
-                    Dropout(0.2),
+                    LSTM(units = 512, activation = 'tanh', return_sequences = True),
+                    ##Dropout(0.2),
                     
-                    LSTM(units = 120, activation = 'tanh', return_sequences = True),
-                    Dropout(0.2),
+                    LSTM(units = 512, activation = 'tanh', return_sequences = True),
+                    #Dropout(0.2),
                           
-                    LSTM(units = 120, activation = 'tanh'),
-                    Dropout(0.2),
+                    LSTM(units = 512, activation = 'tanh'),
+                    #Dropout(0.2),
                           
                     Dense(units = len(ticker_symbols), activation='linear')
                    ])
 
 model.compile(
-              loss = 'mean_squared_error',
+              #loss = 'mean_squared_error',
+              loss = 'mae',
               optimizer = 'adam',
               metrics=['accuracy']
              )
@@ -136,14 +137,15 @@ model.summary()
 
 # In[Train Model]
 
-model.fit(
-          x = x_train,
-          y = y_train,
-          epochs = epoch,
-          batch_size = batch,
-          #validation_data = (x_val, y_val),
-          #validation_freq = val_freq,
-          callbacks = [EarlyStopping(patience = wait)]
+history = model.fit(
+                    x = x_train,
+                    y = y_train,
+                    epochs = epoch,
+                    batch_size = batch,
+                    shuffle = False,
+                    validation_data = (x_val, y_val),
+                    validation_freq = val_freq,
+                    callbacks = [EarlyStopping(patience = wait)]
          )
 
 # In[Test Model]
@@ -157,6 +159,45 @@ y_pred = model.predict(x_test)
 
 # In[Graph Results]
 
+#plot loss
+plt.plot(
+         history.history['loss'],
+         label = 'Training Loss',
+         color = 'green',
+         linestyle = 'dashed'
+        )
+
+plt.plot(
+         history.history['val_loss'],
+         label = 'Validation Loss',
+         color = 'blue',
+         linestyle = 'dashed'
+        )
+
+plt.legend()
+plt.show()
+
+#plot accuracy
+plt.plot(
+
+         history.history['accuracy'],
+         label = 'Training Accuracy',
+         color = 'green',
+         linestyle = 'solid'
+        )
+
+plt.plot(
+         history.history['val_accuracy'],
+         label = 'Validation Accuracy',
+         color = 'blue',
+         linestyle = 'solid'
+        )
+
+plt.legend()
+plt.show()
+
+
+#plot stock predictions
 y_test_2d = y_test.reshape(y_test.shape[0], y_test.shape[2])
 y_pred = np.array(y_pred)
 
