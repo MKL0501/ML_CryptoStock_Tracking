@@ -29,7 +29,7 @@ epoch = 50
 wait = 10
 
 #training cycles before weights are updated
-batch = 32
+batch = 1
 
 #how many epochs between checking validation data
 val_freq = 1
@@ -98,6 +98,8 @@ y = np.array(y)
 data_column_indices = {name : i for i, name in enumerate(scaled_data.columns)}
 target_column_indices = {name : i for i, name in enumerate(scaled_target.columns)}
 
+n = x.shape[0]
+
 x_train = x[0 : int(n * train_stop)]
 x_val = x[int(n * train_stop) : int(n * test_start)]
 x_test = x[int(n * test_start) :]
@@ -114,10 +116,10 @@ model = Sequential([
                     LSTM(units = 512, activation = 'tanh', return_sequences = True, input_shape = (x_train.shape[1], x_train.shape[2])),
                     #Dropout(0.2),
                           
-                    LSTM(units = 512, activation = 'tanh', return_sequences = True),
+                    #LSTM(units = 512, activation = 'tanh', return_sequences = True),
                     ##Dropout(0.2),
                     
-                    LSTM(units = 512, activation = 'tanh', return_sequences = True),
+                    #LSTM(units = 512, activation = 'tanh', return_sequences = True),
                     #Dropout(0.2),
                           
                     LSTM(units = 512, activation = 'tanh'),
@@ -146,7 +148,7 @@ history = model.fit(
                     validation_data = (x_val, y_val),
                     validation_freq = val_freq,
                     callbacks = [EarlyStopping(patience = wait)]
-         )
+                   )
 
 # In[Test Model]
 
