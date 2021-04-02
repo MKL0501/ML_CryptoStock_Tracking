@@ -13,6 +13,22 @@ import matplotlib.pyplot as plt
 import random
 import time
 import os
+import matplotlib.pyplot as plt
+
+
+# Tensorflow's latest update screwed up GPU compatibility, so this part is needed.
+# If no GPUs found, it'll ignore this part.
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Currently, memory growth needs to be the same across GPUs
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+    except RuntimeError as e:
+        # Memory growth must be set before GPUs have been initialized
+        print(e)
 
 # Seeds are the same so it gives the same result every run
 np.random.seed(42)
@@ -150,9 +166,9 @@ def create_model(sequence_length, n_features, units=256, cell=LSTM, n_layers=2, 
     return model
 
 # Window size or the sequence length
-N_STEPS = 50
+N_STEPS = 100
 # Lookup step, 1 is the next day
-LOOKUP_STEP = 15
+LOOKUP_STEP = 1
 # whether to scale feature columns & output price as well
 SCALE = True
 scale_str = f"sc-{int(SCALE)}"
@@ -169,22 +185,20 @@ FEATURE_COLUMNS = ["adjclose", "volume", "open", "high", "low"]
 # date now
 date_now = time.strftime("%Y-%m-%d")
 ### model parameters
-N_LAYERS = 2
+N_LAYERS = 4
 # LSTM cell
 CELL = LSTM
-# 256 LSTM neurons
-UNITS = 256
+# LSTM neurons
+UNITS = 512
 # 40% dropout
 DROPOUT = 0.4
 # whether to use bidirectional RNNs
 BIDIRECTIONAL = False
 ### training parameters
 # mean absolute error loss
-# LOSS = "mae"
-# huber loss
-LOSS = "huber_loss"
+LOSS = "mae"
 OPTIMIZER = "adam"
-BATCH_SIZE = 64
+BATCH_SIZE = 256
 EPOCHS = 500
 # TSLA stock ticker
 ticker = "TSLA"
@@ -232,8 +246,81 @@ history = model.fit(data["X_train"], data["y_train"],
                     validation_data=(data["X_test"], data["y_test"]),
                     callbacks=[checkpointer, tensorboard],
                     verbose=1)
-    
+
+# Makes predictions
+def predict(model, data):
+    # retrieve the last sequence from data
+    last_sequence = data["last_sequence"][-N_STEPS:]
+    # expand dimension
+    last_sequence = np.expand_dims(last_sequence, axis=0)
+    # get the prediction (scaled from 0 to 1)
+    prediction = model.predict(last_sequence)
+    # get the price (by inverting the scaling)
+    if SCALE:
+        predicted_price = data["column_scaler"]["adjclose"].inverse_transform(prediction)[0][0]
+    else:
+        predicted_price = prediction[0][0]
+    return predicted_price
+
+# Takes model and data and merges into a final dataframe.
+# Dataframe includes the features that were in model and data
+# So it has real values and predicted values of the test set
+def get_final_df(model, data):
+    X_test = data["X_test"]
+    y_test = data["y_test"]
+    # perform prediction and get prices
+    y_pred = model.predict(X_test)
+    if SCALE:
+        y_test = np.squeeze(data["column_scaler"]["adjclose"].inverse_transform(np.expand_dims(y_test, axis=0)))
+        y_pred = np.squeeze(data["column_scaler"]["adjclose"].inverse_transform(y_pred))
+    test_df = data["test_df"]
+    # add predicted future prices to the dataframe
+    test_df[f"adjclose_{LOOKUP_STEP}"] = y_pred
+    # add true future prices to the dataframe
+    test_df[f"true_adjclose_{LOOKUP_STEP}"] = y_test
+    # sort the dataframe by date
+    test_df.sort_index(inplace=True)
+    final_df = test_df
+    return final_df
 
 
+# Plots true price and predicted prices
+def plot_graph(test_df):
+    plt.plot(test_df[f'true_adjclose_{LOOKUP_STEP}'], c='b')
+    plt.plot(test_df[f'adjclose_{LOOKUP_STEP}'], c='r')
+    plt.xlabel("Days")
+    plt.ylabel("Price")
+    plt.legend(["Actual Price", "Predicted Price"])
+    plt.show()
 
+# load optimal model weights from results folder
+model_path = os.path.join("results", model_name) + ".h5"
+model.load_weights(model_path)
+
+# evaluate the model
+loss, mae = model.evaluate(data["X_test"], data["y_test"], verbose=0)
+# calculate the mean absolute error (inverse scaling)
+
+if SCALE:
+    mean_absolute_error = data["column_scaler"]["adjclose"].inverse_transform([[mae]])[0][0]
+else:
+    mean_absolute_error = mae
+
+# get the final dataframe for the testing set
+final_df = get_final_df(model, data)
+
+# predict the future price
+future_price = predict(model, data)
+
+# plot true/pred prices graph
+plot_graph(final_df)
+
+print(final_df.tail(10))
+
+# save the final dataframe to csv-results folder
+csv_results_folder = "csv-results"
+if not os.path.isdir(csv_results_folder):
+    os.mkdir(csv_results_folder)
+csv_filename = os.path.join(csv_results_folder, model_name + ".csv")
+final_df.to_csv(csv_filename)
 
